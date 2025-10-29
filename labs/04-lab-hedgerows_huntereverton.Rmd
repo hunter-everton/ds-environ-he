@@ -194,8 +194,11 @@ Class discussion: What type of join do we want to use to to combine the individu
 
 ```{r}
 ### your code here
+traits <- traits %>%
+    select(c("GenusSpecies", "MeanITD", "d"))
+
 spec.traits <- spec %>%
-    
+    left_join(traits, by = "GenusSpecies")
 
 ### The dimensions should be 8810    7
 dim(spec.traits)
@@ -207,11 +210,13 @@ EXTRA HINT: Remember the TRUEs are counted as 1s in R.
 
 ```{r}
 ### your code here
+sum(is.na(spec.traits$MeanITD))
 ```
 
 - 2c. What are the unique species names missing body size data. 
 ```{r}
 ### your code here
+unique(spec.traits[is.na(spec.traits$MeanITD), "GenusSpecies"])
 ```
 
 - 2d. These were relatively rare species that didn't have enough individuals to accurately estimate body size. Since we cannot do much with them, go ahead and drop them. Keep the data named spec.traits. You can use the tools we have learned in dyplyr, or just clever indexing. 
@@ -222,9 +227,11 @@ EXTRA HINT: Remember that ! reverses TRUEs and FALSEs (so TRUE because FALSE and
 EXTRA EXTRA HINT: If you decide to use indexing, remember that when we index a 2D object we need to specify the indexes of the rows and columns. 
 ```{r}
 ### your code here
+spec.traits <- spec.traits %>%
+    subset(!is.na(MeanITD))
 
 ### The dimensions should be 8634 7
-# dim(spec.traits)
+dim(spec.traits)
 ```
 
 ### Lab Question 3
@@ -233,6 +240,12 @@ EXTRA EXTRA HINT: If you decide to use indexing, remember that when we index a 2
 
 ```{r}
 ### your code here
+sys.traits <- spec.traits %>%
+    group_by(Site, Year, SiteStatus) %>%
+    summarize(MeanITD = mean(MeanITD),
+              d = mean(d))
+
+head(sys.traits)
 ```
 
 - 3b. Visualize this data with a histograms for each trait.
@@ -240,15 +253,26 @@ HINT: 'geom_histogram()' is the function that makes histograms, and it only need
 ```{r}
 ### body size
 ### your code here
+
+ggplot(sys.traits, aes(x = MeanITD)) +
+    geom_histogram(bins = 20) +
+    labs(x = "average body size")
 ```
 
 
 ```{r}
 ### Specialization
 ### your code here
+
+ggplot(sys.traits, aes(x = d)) +
+    geom_histogram(bins = 20) +
+    labs(x = "average specialization")
 ```
 - 3c. Describe what you see.
--- ANSWER: 
+
+ANSWER: The average body size of bees across all combinations of site, year,
+and site status is centered on 1.2 with outliers out towards 1.6 and 2. The 
+average floral specialization is centered on 0.15 with outliers towards 0.20 and 0.25.
 
 ### Demo: Do the bees at hedgerows and weedy field margins (controls) have the same distribution of traits? 
 
@@ -261,7 +285,7 @@ HINT: 'geom_histogram()' is the function that makes histograms, and it only need
 In the study, we tested the hypothesis above by creating a null distribution of average trait values by shuffling individuals across sites within a year. This enabled us to constrain species abundance and richness at a site while changing the identity of the individuals. Creating this type of custom null model is a bit out of the scope of what we know how to do at this point in the class, so instead we will simplify our problem by shuffling the treatment columns (mature hedgerow vs. control) across sites within a year. We will then take the average trait value for the randomized data to calculate the null expectation of controls b
 
 **Step 0**: Let's first try to do our randomization with 1 year of data then work out way up. 
-```{r, eval=FALSE}
+```{r, eval = FALSE}
 ## Let's pick 2013, it was a nice year.
 year1 <- sys.traits %>%
   filter(Year == 2013)
@@ -271,7 +295,7 @@ head(year1)
 
 **Step 1:**Shuffle the treatment column
 
-```{r, eval=FALSE}
+```{r, eval = FALSE}
 ## step 1) year1.sample shuffles a column
 
 year1.shuffle <-  sample(year1$SiteStatus, 
@@ -281,17 +305,17 @@ year1.shuffle
 ```
 
 **Step 2:** Add the shuffled column back on to the table
-```{r, eval=FALSE}
+```{r, eval = FALSE}
 year1$ShuffleSiteStatus <-  year1.shuffle
 head(year1)
 ```
 
 **Step 3:** Take the mean of the simulated data.
 
-```{r, eval=FALSE}
+```{r, eval = FALSE}
 shuffle.traits <- year1 %>%
   group_by(Year, ShuffleSiteStatus) %>%
-  summarise(d=mean(d), 
+  summarise(d=mean(d),
             MeanITD = mean(MeanITD))
 ```
 
@@ -301,15 +325,37 @@ shuffle.traits <- year1 %>%
 
 ```{r}
 
-# randomizeTraits <- ...
+randomizeTraits <- function(yr, sys.traits) {
+    # Takes a variable yr and the dataset sys.traits
+    # Shuffles the dataset by yr
+
+    year <- sys.traits %>%
+        filter(Year == yr)
+    
+    year.shuffle <- sample(year$SiteStatus,
+                           nrow(year), replace = FALSE)
+
+    year$ShuffleSiteStatus <- year.shuffle
+
+    shuffle.traits <- year %>%
+        group_by(Year, ShuffleSiteStatus) %>%
+        summarize(d = mean(d),
+                  MeanITD = mean(MeanITD),
+                  .groups = "drop")
+
+    return(shuffle.traits)
+}
 
 ```
 
 - 4b.  Test out your function on a 2013. Run your function a few times. Do the mean values for the traits change? Why? 
 ```{r}
 ### your code here
+randomizeTraits(2013, sys.traits)
 ```
--- ANSWER: 
+-- ANSWER: The values do not change across multiple uses as the seed is set at
+the beginning of the document. This seed set up reproducible values and therefore
+set the values to not change.
 
 ### Question 5
 Now we want to use our function on each year of data and save our results. The perfect situation for a for loop! 
@@ -318,7 +364,9 @@ Now we want to use our function on each year of data and save our results. The p
 
 ```{r}
 ### your code here
-# years <- ...
+years <- sys.traits$Year %>%
+    unique() %>%
+    sort()
 ```
 
 - 5b. We will do this together in class, but first try to think it through.
@@ -329,14 +377,23 @@ HINT: If you do as I suggested above, you will not want to include year one in y
 
 
 ```{r}
-# random.traits <- ...
+random.traits <- data.frame(randomizeTraits(years[1], sys.traits))
+for (year in years[-1]) {
+    random_year <- randomizeTraits(year, sys.traits)
+    random.traits <- rbind(random.traits, random_year)
+}
+random.traits
 ```
 
 - 5c. Take the mean body size and specialization for each site status across years of that simulated full dataset, call it mean.years
 
 ```{r}
-
-# mean.years <- ...
+mean.years <- random.traits %>%
+    group_by(ShuffleSiteStatus) %>%
+    summarize(d = mean(d),
+              MeanITD = mean(MeanITD),
+              .groups = "drop")
+mean.years
 ```
 
 - 5d. Now combine all the steps above into a single function called repRandomComm that:
@@ -350,21 +407,37 @@ NOTE: It isn't A+ to have argument names be the same as objects in your Global E
 
 ```{r}
 ### your code here
+repRandomComm <- function(years, sys.traits) {
+    random.traits <- data.frame(randomizeTraits(years[1], sys.traits))
+        for (year in years[-1]) {
+            random_year <- randomizeTraits(year, sys.traits)
+            random.traits <- rbind(random.traits, random_year)
+        }
+    mean.years <- random.traits %>%
+        group_by(ShuffleSiteStatus) %>%
+        summarize(d = mean(d),
+                MeanITD = mean(MeanITD),
+                .groups = "drop")
+    return(mean.years)
+}
 ```
 
 Try out your function! 
 
 ```{r, message=FALSE}
-### your code here
+repRandomComm(years, sys.traits)
 ```
 
 - 5d. Last step! Run your randomization 100 times using a for loop. Similar to our above for loop, it was helpful to run the randomization once to get the format of the dataframe correct, then just rbind the rest of the iterations onto that. 
 
 ```{r, message=FALSE}
-
+randomized.comms <- data.frame(repRandomComm(years, sys.traits))
+for (i in 1:99) {
+    randomized.comms <- rbind(randomized.comms, repRandomComm(years, sys.traits))
+}
 
 ### The dimensions should be 200 3 (two rows are created each iteration)
-# dim(randomized.comms)
+dim(randomized.comms)
 ```
 
 ###  Demo: Interpreting the results
@@ -376,7 +449,7 @@ In our case, our test statistic is the mean body size (MeanITD) and mean special
 
 We will start by calculating our observed test statistic for both traits. 
 
-```{r, eval=FALSE}
+```{r}
 obs.means.yr <- sys.traits %>%
   group_by(Year, Site, SiteStatus) %>%
   summarise(d=mean(d), 
@@ -393,7 +466,7 @@ obs.means
 
 To visualize our observed data in relation to our randomized data, we will plot a histogram of our simulated data and add a vertical line for our observed data. 
 
-```{r, eval=FALSE}
+```{r}
 ggplot(randomized.comms, aes(x=MeanITD, fill=ShuffleSiteStatus)) +
   geom_histogram() +
     geom_vline(obs.means,
@@ -405,7 +478,7 @@ Our observed data looks quite different than our randomized data!
 If our null hypothesis that bees at mature hedgerows and controls have similar traits is true what is the probability we get bees as small as we did at the controls? Let's calculate that probability. We need to calculate how many times we got values equal to or more extreme than our observed value when we randomized the treatments (mature hedgerow, control) in the data.
 
 Remember that we can sum the TRUEs. 
-```{r, eval=FALSE}
+```{r}
 
 ## The base R way
 sum(randomized.comms$MeanITD[
@@ -431,7 +504,7 @@ We generally reject our null hypothesis if our p-value is less than 0.05.  We ca
 
 Now for the mature communities: 
 
-```{r, eval=FALSE}
+```{r}
 sum(randomized.comms$MeanITD[
   randomized.comms$ShuffleSiteStatus == "mature"] >= obs.means$MeanITD[obs.means$SiteStatus == "mature"])/
   nrow(randomized.comms)
@@ -445,25 +518,46 @@ Again, that is a pretty low probability that we would get our observed statistic
 Follow the same steps for the specialization (d)
 - 6a. Make a histogram with the randomized and observed values.
 ```{r}
+## your code here
+ggplot(randomized.comms, aes(x = d, fill = ShuffleSiteStatus)) +
+    geom_histogram() +
+    geom_vline(obs.means,
+               mapping = aes(xintercept = d, linetype = SiteStatus)) +
+    labs(x = "average specialization")
 
-### your code here
 ```
 
 - 6b.  What is the probability that bees at controls are as generalized (so small values of d) as what we observed, given then null hypothesis is true?
 ```{r}
-
 ### your code here
+randomized.standard <- randomized.comms %>%
+  filter(ShuffleSiteStatus == "control") %>%
+  select(d)
+
+obs.standard <- obs.means %>%
+  filter(SiteStatus == "control") %>%
+  select(d)
+
+sum(randomized.standard$d <= obs.standard$d) / nrow(randomized.standard)
 ```
 
 - 6c. Do we accept or reject our null hypothesis? 
--- ANSWER: 
+-- ANSWER: Reject the null hypothesis as the p-value is less than 0.05
 
 - 6d.  What is the probability that bees at mature hedgerows are as specialized (so large values of d) as what we observed, given then null hypothesis is true?
 ```{r}
+randomized.standard <- randomized.comms %>%
+  filter(ShuffleSiteStatus == "mature") %>%
+  select(d)
 
+obs.standard <- obs.means %>%
+  filter(SiteStatus == "mature") %>%
+  select(d)
+
+sum(randomized.standard$d >= obs.standard$d) / nrow(randomized.standard)
 ```
 - 6f. Do we accept or reject our null hypothesis? 
 
--- ANSWER: 
+-- ANSWER: Reject the null hypothesis as the p-value is less than 0.05
 
 With these analyses we have approximated the analysis of Ponisio et al. 2016. Congratulations :) 
